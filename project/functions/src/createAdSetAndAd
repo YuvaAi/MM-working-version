@@ -1,0 +1,82 @@
+import * as functions from 'firebase-functions';
+import fetch from 'node-fetch'; // If not installed, run: npm install node-fetch
+
+export const createAdSetAndAd = async (data: any, context: any) => {
+  console.log("✅ createAdSetAndAd function triggered");
+  console.log("📦 Data received:", data);
+
+  const {
+    post_id,
+    daily_budget_cents = 5000,
+    targeting = {
+      countries: ['IN'],
+      age_min: 18,
+      age_max: 35,
+      platforms: ['facebook']
+    },
+    campaign_id = '120228492076590606'
+  } = data;
+
+  try {
+    const adAccountId = '1384851732634193';
+    const pageId = '680559155145043';
+    const accessToken = 'EAAenecQDIdQBPMEytMSvUXZBUKDlYhOcTsEd42DBmwGQGF6vfxvVWEjEBgoBJcHnaTayZCsd2eRgMSantxDSA6QMPAygA1gYZBA0PMgOUyoi0rZA0EC7TEhwjqFmlo8FObZAQAspDuvJjQk0rSoJMIdFUGtA3MYpFIDrzNWG76VdXwKpy6ordgG5984ZBMHNCK';
+
+    // 1. Create Ad Set
+    const adSetResponse = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}/adsets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: `MarketMate Auto AdSet ${Date.now()}`,
+        campaign_id: campaign_id,
+        daily_budget: daily_budget_cents.toString(),
+        billing_event: 'IMPRESSIONS',
+        bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+        optimization_goal: 'POST_ENGAGEMENT',
+        promoted_object: { page_id: pageId },
+        targeting: {
+          geo_locations: { countries: targeting.countries },
+          age_min: targeting.age_min,
+          age_max: targeting.age_max,
+          publisher_platforms: targeting.platforms
+        },
+        start_time: new Date(Date.now() + 1 * 60000).toISOString(), // start in 1 min
+        end_time: new Date(Date.now() + 3 * 86400000).toISOString(), // run for 3 days
+        status: 'ACTIVE',
+        access_token: accessToken
+      })
+    });
+
+    const adSetData = await adSetResponse.json();
+    if (!adSetResponse.ok) throw new Error(adSetData.error?.message || 'AdSet creation failed');
+
+    const adSetId = adSetData.id;
+
+    // 2. Create Ad
+    const adResponse = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}/ads`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: `MarketMate Auto Ad ${Date.now()}`,
+        adset_id: adSetId,
+        creative: { object_story_id: `${pageId}_${post_id}` },
+        status: 'ACTIVE',
+        access_token: accessToken
+      })
+    });
+
+    const adData = await adResponse.json();
+    if (!adResponse.ok) throw new Error(adData.error?.message || 'Ad creation failed');
+
+    return {
+      success: true,
+      campaign_id: campaign_id,
+      adset_id: adSetId,
+      ad_id: adData.id
+    };
+
+  } catch (err: any) {
+    console.error("🔥 Error in createAdSetAndAd:", err);
+    throw new functions.https.HttpsError('internal', err.message || 'Unknown error');
+  }
+};
